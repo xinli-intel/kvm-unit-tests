@@ -67,7 +67,6 @@ int main(int ac, char **av)
 {
 	char *shstk_virt;
 	unsigned long shstk_phys;
-	unsigned long *ptep;
 	pteval_t pte = 0;
 	bool rvc;
 
@@ -90,17 +89,8 @@ int main(int ac, char **av)
 	shstk_phys = (unsigned long)virt_to_phys(alloc_page());
 
 	/* Install the new page. */
-	pte = shstk_phys | PT_PRESENT_MASK | PT_WRITABLE_MASK | PT_USER_MASK;
+	pte = shstk_phys | PT_PRESENT_MASK | PT_USER_MASK | PT_DIRTY_MASK;
 	install_pte(current_page_table(), 1, shstk_virt, pte, 0);
-	memset(shstk_virt, 0x0, PAGE_SIZE);
-
-	/* Mark it as shadow-stack page. */
-	ptep = get_pte_level(current_page_table(), shstk_virt, 1);
-	*ptep &= ~PT_WRITABLE_MASK;
-	*ptep |= PT_DIRTY_MASK;
-
-	/* Flush the paging cache. */
-	invlpg((void *)shstk_virt);
 
 	/* Enable shadow-stack protection */
 	wrmsr(MSR_IA32_U_CET, ENABLE_SHSTK_BIT);
