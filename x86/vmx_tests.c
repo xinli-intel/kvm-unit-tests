@@ -11459,6 +11459,94 @@ static void vmx_cet_test(void)
 	test_set_guest_finished();
 }
 
+static void vmx_exit_control_fred_test_guest(void)
+{
+	u64 fred_config = rdmsr(MSR_IA32_FRED_CONFIG);
+
+	if (fred_config == 0x100000)
+		wrmsr(MSR_IA32_FRED_CONFIG, 0x150000);
+	if (fred_config == 0x200000)
+		wrmsr(MSR_IA32_FRED_CONFIG, 0x250000);
+	if (fred_config == 0x300000)
+		wrmsr(MSR_IA32_FRED_CONFIG, 0x350000);
+	if (fred_config == 0x400000)
+		wrmsr(MSR_IA32_FRED_CONFIG, 0x450000);
+
+	vmcall();
+}
+
+static void vmx_exit_control_fred_test(void)
+{
+	if (!(ctrl_enter_rev.clr & ENT_LOAD_FRED)) {
+		report_skip("Load FRED state entry control is not available");
+		return;
+	}
+
+	/* Allow the guest to read FRED MSRs directly */
+	msr_bmp_init();
+
+	vmcs_set_bits(ENT_CONTROLS, ENT_LOAD_FRED);
+	vmcs_set_bits(EXI_CONTROLS, EXI_ACTIVATE_CTRL1);
+
+	/* Case 1: */
+	vmcs_clear_bits(EXI_CTRL1, EXI_SAVE_FRED | EXI_LOAD_FRED);
+	wrmsr(MSR_IA32_FRED_CONFIG, 0x1000);
+	vmcs_write(HOST_FRED_CONFIG, 0x1000);
+	vmcs_write(GUEST_FRED_CONFIG, 0x100000);
+	test_set_guest(vmx_exit_control_fred_test_guest);
+
+	enter_guest();
+	report(rdmsr(MSR_IA32_FRED_CONFIG) == 0x150000, "FRED MSRs are retained at VM Exit");
+	report(vmcs_read(GUEST_FRED_CONFIG) == 0x100000, "VMCS guest FRED MSRs are not saved at VM Exit");
+	report(vmcs_read(HOST_FRED_CONFIG) == 0x1000 &&
+	       vmcs_read(HOST_FRED_CONFIG) != rdmsr(MSR_IA32_FRED_CONFIG),
+	       "VMCS host FRED MSRs are NOT loaded at VM Exit");
+
+	/* Case 2: */
+	vmcs_clear_bits(EXI_CTRL1, EXI_SAVE_FRED);
+	vmcs_set_bits(EXI_CTRL1, EXI_LOAD_FRED);
+	wrmsr(MSR_IA32_FRED_CONFIG, 0x2000);
+	vmcs_write(HOST_FRED_CONFIG, 0x2000);
+	vmcs_write(GUEST_FRED_CONFIG, 0x200000);
+	test_override_guest(vmx_exit_control_fred_test_guest);
+
+	enter_guest();
+	report(vmcs_read(GUEST_FRED_CONFIG) == 0x200000, "VMCS guest FRED MSRs are not saved at VM Exit");
+	report(vmcs_read(HOST_FRED_CONFIG) == 0x2000 &&
+	       vmcs_read(HOST_FRED_CONFIG) == rdmsr(MSR_IA32_FRED_CONFIG),
+	       "VMCS host FRED MSRs are loaded at VM Exit");
+
+	/* Case 3: */
+	vmcs_set_bits(EXI_CTRL1, EXI_SAVE_FRED);
+	vmcs_clear_bits(EXI_CTRL1, EXI_LOAD_FRED);
+	wrmsr(MSR_IA32_FRED_CONFIG, 0x3000);
+	vmcs_write(HOST_FRED_CONFIG, 0x3000);
+	vmcs_write(GUEST_FRED_CONFIG, 0x300000);
+	test_override_guest(vmx_exit_control_fred_test_guest);
+
+	enter_guest();
+	report(rdmsr(MSR_IA32_FRED_CONFIG) == 0x350000, "FRED MSRs are retained at VM Exit");
+	report(vmcs_read(GUEST_FRED_CONFIG) == 0x350000, "VMCS guest FRED MSRs are saved at VM Exit");
+	report(vmcs_read(HOST_FRED_CONFIG) == 0x3000 &&
+	       vmcs_read(HOST_FRED_CONFIG) != rdmsr(MSR_IA32_FRED_CONFIG),
+	       "VMCS host FRED MSRs are NOT loaded at VM Exit");
+
+	/* Case 4: */
+	vmcs_set_bits(EXI_CTRL1, EXI_SAVE_FRED | EXI_LOAD_FRED);
+	wrmsr(MSR_IA32_FRED_CONFIG, 0x4000);
+	vmcs_write(HOST_FRED_CONFIG, 0x4000);
+	vmcs_write(GUEST_FRED_CONFIG, 0x400000);
+	test_override_guest(vmx_exit_control_fred_test_guest);
+
+	enter_guest();
+	report(vmcs_read(GUEST_FRED_CONFIG) == 0x450000, "VMCS guest FRED MSRs are saved at VM exit");
+	report(vmcs_read(HOST_FRED_CONFIG) == 0x4000 &&
+	       vmcs_read(HOST_FRED_CONFIG) == rdmsr(MSR_IA32_FRED_CONFIG),
+	       "VMCS host FRED MSRs are loaded at VM Exit");
+
+	test_set_guest_finished();
+}
+
 #define TEST(name) { #name, .v2 = name }
 
 /* name/init/guest_main/exit_handler/syscall_handler/guest_regs */
@@ -11574,5 +11662,7 @@ struct vmx_test vmx_tests[] = {
 	TEST(vmx_canonical_test),
 	/* "Load CET" VM-entry/exit controls tests. */
 	TEST(vmx_cet_test),
+	/* FRED VM-Exit control tests. */
+	TEST(vmx_exit_control_fred_test),
 	{ NULL, NULL, NULL, NULL, NULL, {0} },
 };
