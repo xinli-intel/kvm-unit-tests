@@ -11450,6 +11450,194 @@ static void vmx_cet_test(void)
 	test_set_guest_finished();
 }
 
+static u64 guest_fred_config = -1;
+
+static void vmx_fred_test_guest(void)
+{
+	const struct descriptor_table_ptr idt = {
+		.limit = 0xfff,
+		.base = 0x1f00000,
+	};
+
+	lidt(&idt);
+
+	guest_fred_config = rdmsr(MSR_IA32_FRED_CONFIG);
+	if (guest_fred_config == 0x100000)
+		wrmsr(MSR_IA32_FRED_CONFIG, 0x150000);
+	if (guest_fred_config == 0x200000)
+		wrmsr(MSR_IA32_FRED_CONFIG, 0x250000);
+	if (guest_fred_config == 0x300000)
+		wrmsr(MSR_IA32_FRED_CONFIG, 0x350000);
+	if (guest_fred_config == 0x400000)
+		wrmsr(MSR_IA32_FRED_CONFIG, 0x450000);
+
+	if (rdmsr(MSR_IA32_CR_PAT) == 0x0606)
+		wrmsr(MSR_IA32_CR_PAT, 0x0506);
+
+	vmcall();
+}
+
+/*
+ * FRED has three VM entry/exit control bits, and this test checks if KVM
+ * properly handle all eight possible combinations of the three bits.
+ */
+static void vmx_fred_test(void)
+{
+	struct vmcs *curr;
+
+	if (!(ctrl_enter_rev.clr & ENT_LOAD_FRED)) {
+		report_skip("Load FRED state entry control is not available");
+		return;
+	}
+
+	vmcs_set_bits(EXI_CONTROLS, EXI_ACTIVATE_CTRL1);
+
+	/* Allow the guest to read FRED MSRs directly */
+	msr_bmp_init();
+
+	/* Case 1: 3 VM entry/exit control bits all set */
+	vmcs_set_bits(ENT_CONTROLS, ENT_LOAD_FRED);
+	vmcs_set_bits(EXI_CTRL1, EXI_SAVE_FRED | EXI_LOAD_FRED);
+
+	vmcs_write(GUEST_BASE_IDTR, 0x1000000);
+	wrmsr(MSR_IA32_FRED_CONFIG, 0x1000);
+	vmcs_write(HOST_FRED_CONFIG, 0x1000);
+	vmcs_write(GUEST_FRED_CONFIG, 0x100000);
+	test_set_guest(vmx_fred_test_guest);
+
+	enter_guest();
+	report(vmcs_read(GUEST_BASE_IDTR) == 0x1f00000, "Guest IDT base is saved");
+	report(guest_fred_config == 0x100000, "Guest FRED MSRs are loaded upon VM entry");
+	report(vmcs_read(GUEST_FRED_CONFIG) == 0x150000, "Guest FRED MSRs are saved at VM exit");
+	report(rdmsr(MSR_IA32_FRED_CONFIG) == 0x1000, "Host FRED MSRs are loaded at VM exit");
+
+	/*
+	 * Case 2: the VM entry control bit is set while the VM exit control
+	 *         bits are cleared.
+	 */
+	vmcs_set_bits(ENT_CONTROLS, ENT_LOAD_FRED);
+	vmcs_clear_bits(EXI_CTRL1, EXI_SAVE_FRED | EXI_LOAD_FRED);
+
+	wrmsr(MSR_IA32_FRED_CONFIG, 0x2000);
+	vmcs_write(HOST_FRED_CONFIG, 0x2000);
+	vmcs_write(GUEST_FRED_CONFIG, 0x200000);
+	test_override_guest(vmx_fred_test_guest);
+
+	enter_guest();
+	report(rdmsr(MSR_IA32_FRED_CONFIG) == 0x250000 &&
+	       vmcs_read(GUEST_FRED_CONFIG) == 0x200000 &&
+	       vmcs_read(HOST_FRED_CONFIG) == 0x2000,
+	       "FRED MSRs are retained at VM Exit");
+
+	/*
+	 * Case 3: the VM entry control bit is set while the VM exit save FRED
+	 *         MSR control bit is cleared.
+	 */
+	vmcs_set_bits(ENT_CONTROLS, ENT_LOAD_FRED);
+	vmcs_clear_bits(EXI_CTRL1, EXI_SAVE_FRED);
+	vmcs_set_bits(EXI_CTRL1, EXI_LOAD_FRED);
+
+	wrmsr(MSR_IA32_FRED_CONFIG, 0x3000);
+	vmcs_write(HOST_FRED_CONFIG, 0x3000);
+	vmcs_write(GUEST_FRED_CONFIG, 0x300000);
+	test_override_guest(vmx_fred_test_guest);
+
+	enter_guest();
+	report(rdmsr(MSR_IA32_FRED_CONFIG) == 0x3000 &&
+	       vmcs_read(GUEST_FRED_CONFIG) == 0x300000 &&
+	       vmcs_read(HOST_FRED_CONFIG) == 0x3000,
+	       "FRED MSRs are retained at VM Exit");
+
+	/*
+	 * Case 4: the VM entry control bit is set while the VM exit load FRED
+	 *         MSR control bit is cleared.
+	 */
+	vmcs_set_bits(ENT_CONTROLS, ENT_LOAD_FRED);
+	vmcs_set_bits(EXI_CTRL1, EXI_SAVE_FRED);
+	vmcs_clear_bits(EXI_CTRL1, EXI_LOAD_FRED);
+
+	wrmsr(MSR_IA32_FRED_CONFIG, 0x4000);
+	vmcs_write(HOST_FRED_CONFIG, 0x4000);
+	vmcs_write(GUEST_FRED_CONFIG, 0x400000);
+	test_override_guest(vmx_fred_test_guest);
+
+	enter_guest();
+	report(rdmsr(MSR_IA32_FRED_CONFIG) == 0x450000 &&
+	       vmcs_read(GUEST_FRED_CONFIG) == 0x450000 &&
+	       vmcs_read(HOST_FRED_CONFIG) == 0x4000,
+	       "FRED MSRs are retained at VM Exit");
+
+	/*
+	 * Case 5: the VM entry control bit is set while the VM exit control
+	 *         bits are cleared.
+	 */
+	vmcs_set_bits(ENT_CONTROLS, ENT_LOAD_PAT);
+	vmcs_clear_bits(EXI_CONTROLS, EXI_SAVE_PAT | EXI_LOAD_PAT);
+
+	wrmsr(MSR_IA32_CR_PAT, 0x0101);
+	vmcs_write(HOST_PAT, 0x0101);
+	vmcs_write(GUEST_PAT, 0x0606);
+	test_override_guest(vmx_fred_test_guest);
+
+	enter_guest();
+	report(rdmsr(MSR_IA32_CR_PAT) == 0x0506 &&
+	       vmcs_read(GUEST_PAT) == 0x0606 &&
+	       vmcs_read(HOST_PAT) == 0x0101,
+	       "The PAT MSR is retained at VM Exit");
+
+	/*
+	 * Case 6: the VM entry control bit is set while the VM exit save PAT
+	 *         control bit is cleared.
+	 */
+	vmcs_set_bits(ENT_CONTROLS, ENT_LOAD_PAT);
+	vmcs_clear_bits(EXI_CONTROLS, EXI_SAVE_PAT);
+	vmcs_set_bits(EXI_CONTROLS, EXI_LOAD_PAT);
+
+	wrmsr(MSR_IA32_CR_PAT, 0x0101);
+	vmcs_write(HOST_PAT, 0x0101);
+	vmcs_write(GUEST_PAT, 0x0606);
+	test_override_guest(vmx_fred_test_guest);
+
+	enter_guest();
+	report(rdmsr(MSR_IA32_CR_PAT) == 0x0101 &&
+	       vmcs_read(GUEST_PAT) == 0x0606 &&
+	       vmcs_read(HOST_PAT) == 0x0101,
+	       "The PAT MSR is retained at VM Exit");
+
+	/*
+	 * Case 7: the VM entry control bit is set while the VM exit load PAT
+	 *         control bit is cleared.
+	 */
+	vmcs_set_bits(ENT_CONTROLS, ENT_LOAD_PAT);
+	vmcs_set_bits(EXI_CONTROLS, EXI_SAVE_PAT);
+	vmcs_clear_bits(EXI_CONTROLS, EXI_LOAD_PAT);
+
+	wrmsr(MSR_IA32_CR_PAT, 0x0101);
+	vmcs_write(HOST_PAT, 0x0101);
+	vmcs_write(GUEST_PAT, 0x0606);
+	test_override_guest(vmx_fred_test_guest);
+
+	enter_guest();
+	report(rdmsr(MSR_IA32_CR_PAT) == 0x0506 &&
+	       vmcs_read(GUEST_PAT) == 0x0506 &&
+	       vmcs_read(HOST_PAT) == 0x0101,
+	       "The PAT MSR is retained at VM Exit");
+
+	/* Following test_vmx_vmlaunch() needs a "not launched" VMCS */
+	vmcs_save(&curr);
+	vmcs_clear(curr);
+	make_vmcs_current(curr);
+
+	vmcs_set_bits(ENT_CONTROLS, ENT_LOAD_FRED);
+	vmcs_set_bits(EXI_CTRL1, EXI_SAVE_FRED | EXI_LOAD_FRED);
+
+	/* Bit 2 of FRED_CONFIG is reserved; setting it will result in a VM entry failure */
+	vmcs_write(HOST_FRED_CONFIG, 0x1004);
+	test_vmx_vmlaunch(VMXERR_ENTRY_INVALID_HOST_STATE_FIELD);
+
+	test_set_guest_finished();
+}
+
 #define TEST(name) { #name, .v2 = name }
 
 /* name/init/guest_main/exit_handler/syscall_handler/guest_regs */
@@ -11565,5 +11753,7 @@ struct vmx_test vmx_tests[] = {
 	TEST(vmx_canonical_test),
 	/* "Load CET" VM-entry/exit controls tests. */
 	TEST(vmx_cet_test),
+	/* FRED VM-entry/exit controls tests. */
+	TEST(vmx_fred_test),
 	{ NULL, NULL, NULL, NULL, NULL, {0} },
 };
