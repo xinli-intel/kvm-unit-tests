@@ -240,7 +240,7 @@ enum Encoding {
 	EOI_EXIT_BITMAP3	= 0x2022ul,
 	PMLADDR                 = 0x200eul,
 	PMLADDR_HI              = 0x200ful,
-
+	EXI_CTRL1		= 0x2044ul,
 
 	/* 64-Bit Readonly Data Field */
 	INFO_PHYS_ADDR		= 0x2400ul,
@@ -255,11 +255,27 @@ enum Encoding {
 	GUEST_PERF_GLOBAL_CTRL	= 0x2808ul,
 	GUEST_PDPTE		= 0x280aul,
 	GUEST_BNDCFGS		= 0x2812ul,
+	GUEST_FRED_CONFIG	= 0x281aul,
+	GUEST_FRED_RSP1		= 0x281cul,
+	GUEST_FRED_RSP2		= 0x281eul,
+	GUEST_FRED_RSP3		= 0x2820ul,
+	GUEST_FRED_STKLVLS	= 0x2822ul,
+	GUEST_FRED_SSP1		= 0x2824ul,
+	GUEST_FRED_SSP2		= 0x2826ul,
+	GUEST_FRED_SSP3		= 0x2828ul,
 
 	/* 64-Bit Host State */
 	HOST_PAT		= 0x2c00ul,
 	HOST_EFER		= 0x2c02ul,
 	HOST_PERF_GLOBAL_CTRL	= 0x2c04ul,
+	HOST_FRED_CONFIG	= 0x2c08ul,
+	HOST_FRED_RSP1		= 0x2c0aul,
+	HOST_FRED_RSP2		= 0x2c0cul,
+	HOST_FRED_RSP3		= 0x2c0eul,
+	HOST_FRED_STKLVLS	= 0x2c10ul,
+	HOST_FRED_SSP1		= 0x2c12ul,
+	HOST_FRED_SSP2		= 0x2c14ul,
+	HOST_FRED_SSP3		= 0x2c16ul,
 
 	/* 32-Bit Control Fields */
 	PIN_CONTROLS		= 0x4000ul,
@@ -452,6 +468,12 @@ enum Ctrl_exi {
 	EXI_LOAD_EFER		= 1UL << 21,
 	EXI_SAVE_PREEMPT	= 1UL << 22,
 	EXI_LOAD_CET		= 1UL << 28,
+	EXI_ACTIVATE_CTRL1	= 1UL << 31,
+};
+
+enum Ctrl1_exi {
+	EXI_SAVE_FRED		= 1UL << 0,
+	EXI_LOAD_FRED		= 1UL << 1,
 };
 
 enum Ctrl_ent {
@@ -462,6 +484,7 @@ enum Ctrl_ent {
 	ENT_LOAD_EFER		= 1UL << 15,
 	ENT_LOAD_BNDCFGS	= 1UL << 16,
 	ENT_LOAD_CET		= 1UL << 20,
+	ENT_LOAD_FRED		= 1UL << 23,
 };
 
 enum Ctrl_pin {
