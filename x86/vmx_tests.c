@@ -428,7 +428,7 @@ static int test_ctrl_efer_exit_handler(union exit_reason exit_reason)
 			report(rdmsr(MSR_EFER) == (ia32_efer ^ EFER_NX),
 			       "Exit load EFER");
 		}
-		vmcs_write(GUEST_PAT, ia32_efer);
+		vmcs_write(GUEST_EFER, ia32_efer);
 		vmcs_write(GUEST_RIP, guest_rip + 3);
 		return VMX_TEST_RESUME;
 	default:
