@@ -260,14 +260,8 @@ static int preemption_timer_exit_handler(union exit_reason exit_reason)
 
 static void msr_bmp_init(void)
 {
-	void *msr_bitmap;
-	u32 ctrl_cpu0;
-
-	msr_bitmap = alloc_page();
-	ctrl_cpu0 = vmcs_read(CPU_EXEC_CTRL0);
-	ctrl_cpu0 |= CPU_MSR_BITMAP;
-	vmcs_write(CPU_EXEC_CTRL0, ctrl_cpu0);
-	vmcs_write(MSR_BITMAP, (u64)msr_bitmap);
+	vmcs_set_bits(CPU_EXEC_CTRL0, CPU_MSR_BITMAP);
+	vmcs_write(MSR_BITMAP, (u64)alloc_page());
 }
 
 static void *get_msr_bitmap(void)
