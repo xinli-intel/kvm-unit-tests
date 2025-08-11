@@ -11639,6 +11639,94 @@ test_again:
 	test_set_guest_finished();
 }
 
+static void vmx_exit_control_pat_test_guest(void)
+{
+	wrmsr(MSR_IA32_CR_PAT, 0x0506);
+
+	vmcall();
+}
+
+static void vmx_exit_control_pat_test(void)
+{
+	bool entry_not_load_pat_tested = false;
+	u64 host_pat = rdmsr(MSR_IA32_CR_PAT);
+
+	if (!(ctrl_exit_rev.clr & EXI_SAVE_PAT)) {
+		report_skip("Save PAT exit control is not available");
+		return;
+	}
+
+	if (!(ctrl_exit_rev.clr & EXI_LOAD_PAT)) {
+		report_skip("Load PAT exit control is not available");
+		return;
+	}
+
+	if (!(ctrl_enter_rev.clr & ENT_LOAD_PAT)) {
+		report_skip("Load PAT entry control is not available");
+		return;
+	}
+
+	/* Allow the guest to read the PAT MSR directly */
+	msr_bmp_init();
+
+	vmcs_set_bits(ENT_CONTROLS, ENT_LOAD_PAT);
+	vmcs_write(HOST_PAT, host_pat);
+
+test_again:
+	/* Case 1: */
+	vmcs_clear_bits(EXI_CONTROLS, EXI_SAVE_PAT | EXI_LOAD_PAT);
+	if (entry_not_load_pat_tested)
+		test_override_guest(vmx_exit_control_pat_test_guest);
+	else
+		test_set_guest(vmx_exit_control_pat_test_guest);
+	vmcs_write(GUEST_PAT, 0x0606);
+
+	enter_guest();
+	report(rdmsr(MSR_IA32_CR_PAT) == 0x0506, "The PAT MSR is retained at VM Exit");
+	report(vmcs_read(GUEST_PAT) == 0x0606, "VMCS guest PAT is not saved at VM Exit");
+
+	wrmsr(MSR_IA32_CR_PAT, host_pat);
+
+	/* Case 2: */
+	vmcs_clear_bits(EXI_CONTROLS, EXI_SAVE_PAT);
+	vmcs_set_bits(EXI_CONTROLS, EXI_LOAD_PAT);
+	test_override_guest(vmx_exit_control_pat_test_guest);
+	vmcs_write(GUEST_PAT, 0x0606);
+
+	enter_guest();
+	report(rdmsr(MSR_IA32_CR_PAT) == host_pat, "VMCS host PAT is loaded at VM Exit");
+	report(vmcs_read(GUEST_PAT) == 0x0606, "VMCS guest PAT is not saved at VM Exit");
+
+	/* Case 3: */
+	vmcs_set_bits(EXI_CONTROLS, EXI_SAVE_PAT);
+	vmcs_clear_bits(EXI_CONTROLS, EXI_LOAD_PAT);
+	test_override_guest(vmx_exit_control_pat_test_guest);
+	vmcs_write(GUEST_PAT, 0x0606);
+
+	enter_guest();
+	report(rdmsr(MSR_IA32_CR_PAT) == 0x0506, "The PAT MSR is retained at VM Exit");
+	report(vmcs_read(GUEST_PAT) == 0x0506, "VMCS guest PAT is saved at VM Exit");
+
+	wrmsr(MSR_IA32_CR_PAT, host_pat);
+
+	/* Case 4: */
+	vmcs_set_bits(EXI_CONTROLS, EXI_SAVE_PAT | EXI_LOAD_PAT);
+	test_override_guest(vmx_exit_control_pat_test_guest);
+	vmcs_write(GUEST_PAT, 0x0606);
+
+	enter_guest();
+	report(rdmsr(MSR_IA32_CR_PAT) == host_pat, "VMCS host PAT is loaded at VM Exit");
+	report(vmcs_read(GUEST_PAT) == 0x0506, "VMCS guest PAT is saved at VM Exit");
+
+	if (!entry_not_load_pat_tested) {
+		entry_not_load_pat_tested = true;
+		vmcs_clear_bits(ENT_CONTROLS, ENT_LOAD_PAT);
+		goto test_again;
+	}
+
+	test_set_guest_finished();
+}
+
 #define TEST(name) { #name, .v2 = name }
 
 /* name/init/guest_main/exit_handler/syscall_handler/guest_regs */
@@ -11758,5 +11846,7 @@ struct vmx_test vmx_tests[] = {
 	TEST(vmx_exit_control_fred_test),
 	/* EFER VM-Exit control tests. */
 	TEST(vmx_exit_control_efer_test),
+	/* PAT VM-Exit control tests. */
+	TEST(vmx_exit_control_pat_test),
 	{ NULL, NULL, NULL, NULL, NULL, {0} },
 };
