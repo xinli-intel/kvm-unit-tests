@@ -11635,6 +11635,56 @@ static void vmx_exit_control_pat_test(void)
 	test_set_guest_finished();
 }
 
+static void vmx_exit_control_rtit_test_guest(void)
+{
+	if (rdmsr(MSR_IA32_RTIT_CTL) == 0x4)
+		wrmsr(MSR_IA32_RTIT_CTL, 0x8);
+
+	vmcall();
+}
+
+static void vmx_exit_control_rtit_test(void)
+{
+	if (!(ctrl_exit_rev.clr & EXI_CLEAR_RTIT_CTL)) {
+		report_skip("Clear RTIT ctl MSR exit control is not available");
+		return;
+	}
+
+	if (!(ctrl_enter_rev.clr & ENT_LOAD_RTIT_CTL)) {
+		report_skip("Load RTIT ctl MSR entry control is not available");
+		return;
+	}
+
+	/* Allow the guest to read the RTIT control MSR directly */
+	msr_bmp_init();
+
+	vmcs_set_bits(ENT_CONTROLS, ENT_LOAD_RTIT_CTL);
+
+	/* Case 1: */
+	vmcs_clear_bits(EXI_CONTROLS, EXI_CLEAR_RTIT_CTL);
+
+	wrmsr(MSR_IA32_RTIT_CTL, 0);
+	vmcs_write(GUEST_RTIT_CTL, 0x4);
+	test_set_guest(vmx_exit_control_rtit_test_guest);
+
+	enter_guest();
+	report(rdmsr(MSR_IA32_RTIT_CTL) == 0x8, "The RTIT control MSR is retained at VM Exit");
+	report(vmcs_read(GUEST_RTIT_CTL) == 0x8, "VMCS guest RTIT control MSR is saved at VM Exit");
+
+	/* Case 2: */
+	vmcs_set_bits(EXI_CONTROLS, EXI_CLEAR_RTIT_CTL);
+
+	wrmsr(MSR_IA32_RTIT_CTL, 0);
+	vmcs_write(GUEST_RTIT_CTL, 0x4);
+	test_override_guest(vmx_exit_control_rtit_test_guest);
+
+	enter_guest();
+	report(rdmsr(MSR_IA32_RTIT_CTL) == 0x0, "The RTIT control MSR is cleared at VM Exit");
+	report(vmcs_read(GUEST_RTIT_CTL) == 0x8, "VMCS guest RTIT control MSR is saved at VM Exit");
+
+	test_set_guest_finished();
+}
+
 #define TEST(name) { #name, .v2 = name }
 
 /* name/init/guest_main/exit_handler/syscall_handler/guest_regs */
@@ -11754,5 +11804,7 @@ struct vmx_test vmx_tests[] = {
 	TEST(vmx_exit_control_fred_test),
 	/* PAT VM-Exit control tests. */
 	TEST(vmx_exit_control_pat_test),
+	/* RTIT VM-Exit control tests. */
+	TEST(vmx_exit_control_rtit_test),
 	{ NULL, NULL, NULL, NULL, NULL, {0} },
 };
