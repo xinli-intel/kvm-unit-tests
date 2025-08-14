@@ -11775,6 +11775,55 @@ static void vmx_exit_control_rtit_test(void)
 	test_set_guest_finished();
 }
 
+static void vmx_exit_control_cet_test_guest(void)
+{
+	wrmsr(MSR_IA32_S_CET, 2);
+
+	vmcall();
+}
+
+static void vmx_exit_control_cet_test(void)
+{
+	if (!(ctrl_exit_rev.clr & EXI_LOAD_CET)) {
+		report_skip("Load CET state exit control is not available");
+		return;
+	}
+
+	if (!(ctrl_enter_rev.clr & ENT_LOAD_CET)) {
+		report_skip("Load CET state entry control is not available");
+		return;
+	}
+
+	/* Allow the guest to read CET MSRs directly */
+	msr_bmp_init();
+
+	vmcs_set_bits(ENT_CONTROLS, ENT_LOAD_CET);
+	vmcs_write(HOST_S_CET, 6);
+	wrmsr(MSR_IA32_S_CET, 6);
+
+	/* Case 1: */
+	vmcs_clear_bits(EXI_CONTROLS, EXI_LOAD_CET);
+	vmcs_write(GUEST_S_CET, 8);
+	test_set_guest(vmx_exit_control_cet_test_guest);
+
+	enter_guest();
+	report(rdmsr(MSR_IA32_S_CET) == 2, "The IA32_S_CET MSR is retained at VM Exit");
+	report(vmcs_read(GUEST_S_CET) == 2, "VMCS guest IA32_S_CET MSR is saved at VM Exit");
+
+	wrmsr(MSR_IA32_S_CET, 6);
+
+	/* Case 2: */
+	vmcs_set_bits(EXI_CONTROLS, EXI_LOAD_CET);
+	vmcs_write(GUEST_S_CET, 8);
+	test_override_guest(vmx_exit_control_cet_test_guest);
+
+	enter_guest();
+	report(rdmsr(MSR_IA32_S_CET) == 6, "The IA32_S_CET MSR is loaded at VM Exit");
+	report(vmcs_read(GUEST_S_CET) == 2, "VMCS guest RTIT control MSR is saved at VM Exit");
+
+	test_set_guest_finished();
+}
+
 #define TEST(name) { #name, .v2 = name }
 
 /* name/init/guest_main/exit_handler/syscall_handler/guest_regs */
@@ -11898,5 +11947,7 @@ struct vmx_test vmx_tests[] = {
 	TEST(vmx_exit_control_pat_test),
 	/* RTIT VM-Exit control tests. */
 	TEST(vmx_exit_control_rtit_test),
+	/* CET VM-Exit control tests. */
+	TEST(vmx_exit_control_cet_test),
 	{ NULL, NULL, NULL, NULL, NULL, {0} },
 };
