@@ -11547,6 +11547,98 @@ static void vmx_exit_control_fred_test(void)
 	test_set_guest_finished();
 }
 
+#define GUEST_INIT_EFER	(EFER_SCE | EFER_LME | EFER_LMA)
+#define GUEST_SET_EFER	(EFER_LME | EFER_LMA | EFER_NX)
+
+static void vmx_exit_control_efer_test_guest(void)
+{
+	wrmsr(MSR_EFER, GUEST_SET_EFER);
+
+	vmcall();
+}
+
+static void vmx_exit_control_efer_test(void)
+{
+	bool entry_not_load_efer_tested = false;
+	u64 host_efer = rdmsr(MSR_EFER);
+
+	if (!(ctrl_exit_rev.clr & EXI_SAVE_EFER)) {
+		report_skip("Save EFER exit control is not available");
+		return;
+	}
+
+	if (!(ctrl_exit_rev.clr & EXI_LOAD_EFER)) {
+		report_skip("Load EFER exit control is not available");
+		return;
+	}
+
+	if (!(ctrl_enter_rev.clr & ENT_LOAD_EFER)) {
+		report_skip("Load EFER entry control is not available");
+		return;
+	}
+
+	/* Allow the guest to read the EFER MSR directly */
+	msr_bmp_init();
+
+	/* TODO: clear ENT_LOAD_EFER and run tests again */
+	vmcs_set_bits(ENT_CONTROLS, ENT_LOAD_EFER);
+	vmcs_write(HOST_EFER, host_efer);
+
+test_again:
+	/* Case 1: */
+	vmcs_clear_bits(EXI_CONTROLS, EXI_SAVE_EFER | EXI_LOAD_EFER);
+	if (entry_not_load_efer_tested)
+		test_override_guest(vmx_exit_control_efer_test_guest);
+	else
+		test_set_guest(vmx_exit_control_efer_test_guest);
+	vmcs_write(GUEST_EFER, GUEST_INIT_EFER);
+
+	enter_guest();
+	report(rdmsr(MSR_EFER) == GUEST_SET_EFER, "The EFER MSR is retained at VM Exit");
+	report(vmcs_read(GUEST_EFER) == GUEST_INIT_EFER, "VMCS guest EFER is not saved at VM Exit");
+
+	wrmsr(MSR_EFER, host_efer);
+
+	/* Case 2: */
+	vmcs_clear_bits(EXI_CONTROLS, EXI_SAVE_EFER);
+	vmcs_set_bits(EXI_CONTROLS, EXI_LOAD_EFER);
+	test_override_guest(vmx_exit_control_efer_test_guest);
+	vmcs_write(GUEST_EFER, GUEST_INIT_EFER);
+
+	enter_guest();
+	report(rdmsr(MSR_EFER) == host_efer, "VMCS host EFER is loaded at VM Exit");
+	report(vmcs_read(GUEST_EFER) == GUEST_INIT_EFER, "VMCS guest EFER is not saved at VM Exit");
+
+	/* Case 3: */
+	vmcs_set_bits(EXI_CONTROLS, EXI_SAVE_EFER);
+	vmcs_clear_bits(EXI_CONTROLS, EXI_LOAD_EFER);
+	test_override_guest(vmx_exit_control_efer_test_guest);
+	vmcs_write(GUEST_EFER, GUEST_INIT_EFER);
+
+	enter_guest();
+	report(rdmsr(MSR_EFER) == GUEST_SET_EFER, "The EFER MSR is retained at VM Exit");
+	report(vmcs_read(GUEST_EFER) == GUEST_SET_EFER, "VMCS guest EFER is saved at VM Exit");
+
+	wrmsr(MSR_EFER, host_efer);
+
+	/* Case 4: */
+	vmcs_set_bits(EXI_CONTROLS, EXI_SAVE_EFER | EXI_LOAD_EFER);
+	test_override_guest(vmx_exit_control_efer_test_guest);
+	vmcs_write(GUEST_EFER, GUEST_INIT_EFER);
+
+	enter_guest();
+	report(rdmsr(MSR_EFER) == host_efer, "VMCS host EFER is loaded at VM Exit");
+	report(vmcs_read(GUEST_EFER) == GUEST_SET_EFER, "VMCS guest EFER is saved at VM Exit");
+
+	if (!entry_not_load_efer_tested) {
+		entry_not_load_efer_tested = true;
+		vmcs_clear_bits(ENT_CONTROLS, ENT_LOAD_EFER);
+		goto test_again;
+	}
+
+	test_set_guest_finished();
+}
+
 #define TEST(name) { #name, .v2 = name }
 
 /* name/init/guest_main/exit_handler/syscall_handler/guest_regs */
@@ -11664,5 +11756,7 @@ struct vmx_test vmx_tests[] = {
 	TEST(vmx_cet_test),
 	/* FRED VM-Exit control tests. */
 	TEST(vmx_exit_control_fred_test),
+	/* EFER VM-Exit control tests. */
+	TEST(vmx_exit_control_efer_test),
 	{ NULL, NULL, NULL, NULL, NULL, {0} },
 };
