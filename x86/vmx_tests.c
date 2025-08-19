@@ -11824,6 +11824,30 @@ static void vmx_exit_control_cet_test(void)
 	test_set_guest_finished();
 }
 
+static void vmx_exit_control_idt_test_guest(void)
+{
+	const struct descriptor_table_ptr idt = {
+		.limit = 0xf0f,
+		.base = 0x1f00000,
+	};
+
+	lidt(&idt);
+
+	vmcall();
+}
+
+static void vmx_exit_control_idt_test(void)
+{
+	/* Case 1: */
+	test_set_guest(vmx_exit_control_idt_test_guest);
+
+	enter_guest();
+	report(vmcs_read(GUEST_LIMIT_IDTR) == 0xf0f, "Guest IDT limit is saved");
+	report(vmcs_read(GUEST_BASE_IDTR) == 0x1f00000, "Guest IDT base is saved");
+
+	test_set_guest_finished();
+}
+
 #define TEST(name) { #name, .v2 = name }
 
 /* name/init/guest_main/exit_handler/syscall_handler/guest_regs */
@@ -11949,5 +11973,7 @@ struct vmx_test vmx_tests[] = {
 	TEST(vmx_exit_control_rtit_test),
 	/* CET VM-Exit control tests. */
 	TEST(vmx_exit_control_cet_test),
+	/* IDT VM-Exit tests. */
+	TEST(vmx_exit_control_idt_test),
 	{ NULL, NULL, NULL, NULL, NULL, {0} },
 };
