@@ -4369,6 +4369,15 @@ skip_unrestricted_guest:
 	/* Reserved bits in the field (30:12) are 0. */
 	report_prefix_push("reserved bits clear");
 	for (cnt = 12; cnt <= 30; cnt++) {
+		/*
+		 * Regardless of whether FRED transitions would be enabled
+		 * following VM entry, if event type (bits 10:8) is 3
+		 * (hardware exception), bit 13 may have value 1 (indicating
+		 * a nested exception).
+		 */
+		if (cnt == 13)
+			continue;
+
 		ent_intr_info = ent_intr_info_base |
 				INTR_INFO_DELIVER_CODE_MASK |
 				INTR_TYPE_HARD_EXCEPTION | GP_VECTOR |
