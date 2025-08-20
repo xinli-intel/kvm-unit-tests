@@ -135,14 +135,16 @@ union vmx_basic_msr {
 	struct {
 		u32 revision;
 		u32	size:13,
-			reserved1: 3,
+			reserved1:3,
 			width:1,
 			dual:1,
 			type:4,
 			insouts:1,
 			ctrl:1,
 			no_hw_errcode_cc:1,
-			reserved2:7;
+			reserved2:1,
+			nested_exception:1,
+			reserved3:5;
 	};
 };
 

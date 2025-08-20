@@ -1597,7 +1597,8 @@ static void test_vmx_caps(void)
 	report((basic_msr.revision & (1ul << 31)) == 0 &&
 	       basic_msr.size > 0 && basic_msr.size <= 4096 &&
 	       (basic_msr.type == 0 || basic_msr.type == 6) &&
-	       basic_msr.reserved1 == 0 && basic_msr.reserved2 == 0,
+	       basic_msr.reserved1 == 0 && basic_msr.reserved2 == 0 &&
+	       basic_msr.reserved3 == 0,
 	       "MSR_IA32_VMX_BASIC");
 
 	val = rdmsr(MSR_IA32_VMX_MISC);
