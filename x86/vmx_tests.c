@@ -11848,6 +11848,44 @@ static void vmx_exit_control_idt_test(void)
 	test_set_guest_finished();
 }
 
+static void vmx_entry_fred_test_guest(void)
+{
+	vmcall();
+}
+
+static void vmx_entry_fred_test(void)
+{
+	struct vmcs *curr;
+
+	if (!(ctrl_enter_rev.clr & ENT_LOAD_FRED)) {
+		report_skip("Load FRED state entry control is not available");
+		return;
+	}
+
+	/* Allow the guest to read FRED MSRs directly */
+	msr_bmp_init();
+
+	vmcs_set_bits(ENT_CONTROLS, ENT_LOAD_FRED);
+	vmcs_set_bits(EXI_CONTROLS, EXI_ACTIVATE_CTRL1);
+	vmcs_set_bits(EXI_CTRL1, EXI_SAVE_FRED | EXI_LOAD_FRED);
+
+	wrmsr(MSR_IA32_FRED_CONFIG, 0x4000);
+	vmcs_write(HOST_FRED_CONFIG, 0x4000);
+	vmcs_write(GUEST_FRED_CONFIG, 0x400000);
+	test_set_guest(vmx_entry_fred_test_guest);
+
+	/* Following test_vmx_vmlaunch() needs a "not launched" VMCS */
+	vmcs_save(&curr);
+	vmcs_clear(curr);
+	make_vmcs_current(curr);
+
+	/* Bit 2 of FRED_CONFIG is reserved; setting it will result in a VM entry failure */
+	vmcs_write(HOST_FRED_CONFIG, 0x1004);
+	test_vmx_vmlaunch(VMXERR_ENTRY_INVALID_HOST_STATE_FIELD);
+
+	test_set_guest_finished();
+}
+
 #define TEST(name) { #name, .v2 = name }
 
 /* name/init/guest_main/exit_handler/syscall_handler/guest_regs */
@@ -11975,5 +12013,6 @@ struct vmx_test vmx_tests[] = {
 	TEST(vmx_exit_control_cet_test),
 	/* IDT VM-Exit tests. */
 	TEST(vmx_exit_control_idt_test),
+	TEST(vmx_entry_fred_test),
 	{ NULL, NULL, NULL, NULL, NULL, {0} },
 };
