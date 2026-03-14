@@ -1892,6 +1892,98 @@ out:
 	return 0;
 }
 
+static fred_handler fred_user_handler;
+static fred_handler fred_kernel_handler;
+
+void fred_set_user_handler(fred_handler handler)
+{
+	fred_user_handler = handler;
+}
+
+void fred_set_kernel_handler(fred_handler handler)
+{
+	fred_kernel_handler = handler;
+}
+
+static void __attribute__((__used__)) fred_entry_from_user(struct fred_stack_frame *fred_stack_frame)
+{
+	if (fred_user_handler)
+		return fred_user_handler(fred_stack_frame);
+}
+
+static void __attribute__((__used__)) fred_entry_from_kernel(struct fred_stack_frame *fred_stack_frame)
+{
+	if (fred_kernel_handler)
+		return fred_kernel_handler(fred_stack_frame);
+}
+
+#define FRED_PUSH_AND_CLEAR_REGS				\
+	"	push   %rdi\n\t"				\
+	"	push   %rsi\n\t"				\
+	"	push   %rdx\n\t"				\
+	"	push   %rcx\n\t"				\
+	"	push   %rax\n\t"				\
+	"	push   %r8\n\t"					\
+	"	push   %r9\n\t"					\
+	"	push   %r10\n\t"				\
+	"	push   %r11\n\t"				\
+	"	push   %rbx\n\t"				\
+	"	push   %rbp\n\t"				\
+	"	push   %r12\n\t"				\
+	"	push   %r13\n\t"				\
+	"	push   %r14\n\t"				\
+	"	push   %r15\n\t"				\
+	"	xor    %esi,%esi\n\t"				\
+	"	xor    %edx,%edx\n\t"				\
+	"	xor    %ecx,%ecx\n\t"				\
+	"	xor    %r8d,%r8d\n\t"				\
+	"	xor    %r9d,%r9d\n\t"				\
+	"	xor    %r10d,%r10d\n\t"				\
+	"	xor    %r11d,%r11d\n\t"				\
+	"	xor    %ebx,%ebx\n\t"				\
+	"	xor    %ebp,%ebp\n\t"				\
+	"	xor    %r12d,%r12d\n\t"				\
+	"	xor    %r13d,%r13d\n\t"				\
+	"	xor    %r14d,%r14d\n\t"				\
+	"	xor    %r15d,%r15d\n\t"
+
+#define FRED_POP_REGS						\
+	"	pop    %r15\n\t"				\
+	"	pop    %r14\n\t"				\
+	"	pop    %r13\n\t"				\
+	"	pop    %r12\n\t"				\
+	"	pop    %rbp\n\t"				\
+	"	pop    %rbx\n\t"				\
+	"	pop    %r11\n\t"				\
+	"	pop    %r10\n\t"				\
+	"	pop    %r9\n\t"					\
+	"	pop    %r8\n\t"					\
+	"	pop    %rax\n\t"				\
+	"	pop    %rcx\n\t"				\
+	"	pop    %rdx\n\t"				\
+	"	pop    %rsi\n\t"				\
+	"	pop    %rdi\n\t"
+
+/* FRED entry points */
+asm(
+	".align 4096\n\t"
+	".globl asm_fred_entrypoint_user\n\t"
+	"asm_fred_entrypoint_user:\n\t"
+	FRED_PUSH_AND_CLEAR_REGS
+	"	mov    %rsp,%rdi\n\t"
+	"	call   fred_entry_from_user\n\t"
+	FRED_POP_REGS
+	"	eretu\n\t"
+	".org	asm_fred_entrypoint_user + 256, 0xcc\n\t"
+	".globl asm_fred_entrypoint_kernel\n\t"
+	"asm_fred_entrypoint_kernel:\n\t"
+	FRED_PUSH_AND_CLEAR_REGS
+	"	mov    %rsp,%rdi\n\t"
+	"	call   fred_entry_from_kernel\n\t"
+	FRED_POP_REGS
+	"	erets\n\t"
+);
+
 /*
  * Add a teardown step. Executed after the test's main function returns.
  * Teardown steps executed in reverse order.
