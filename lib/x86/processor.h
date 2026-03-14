@@ -139,6 +139,8 @@ static inline u64 get_non_canonical(u64 addr, u64 mask)
 #define X86_CR4_PKS		BIT(X86_CR4_PKS_BIT)
 #define X86_CR4_LAM_SUP_BIT	(28)
 #define X86_CR4_LAM_SUP		BIT(X86_CR4_LAM_SUP_BIT)
+#define X86_CR4_FRED_BIT	(32)
+#define X86_CR4_FRED		BIT(X86_CR4_FRED_BIT)
 
 #define X86_EFLAGS_CF_BIT	(0)
 #define X86_EFLAGS_CF		BIT(X86_EFLAGS_CF_BIT)

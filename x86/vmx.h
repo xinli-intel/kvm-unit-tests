@@ -59,6 +59,85 @@ struct invvpid_operand {
 	u64 gla;
 };
 
+struct regs {
+	u64 rax;
+	u64 rcx;
+	u64 rdx;
+	u64 rbx;
+	u64 cr2;
+	u64 rbp;
+	u64 rsi;
+	u64 rdi;
+	u64 r8;
+	u64 r9;
+	u64 r10;
+	u64 r11;
+	u64 r12;
+	u64 r13;
+	u64 r14;
+	u64 r15;
+	u64 rflags;
+};
+
+struct fred_cs {
+        u64     cs      : 16,
+                sl      :  2,
+                wfe     :  1,
+                        : 45;
+};
+
+struct fred_ss {
+        u64     ss      : 16,
+                sti     :  1,
+                swevent :  1,
+                nmi     :  1,
+                        : 13,
+                vector  :  8,
+                        :  8,
+                type    :  4,
+                        :  4,
+                enclave :  1,
+                l       :  1,
+                nested  :  1,
+                        :  1,
+                insnlen :  4;
+};
+
+struct fred_stack_frame {
+	u64 r15;
+	u64 r14;
+	u64 r13;
+	u64 r12;
+	u64 bp;
+	u64 bx;
+	u64 r11;
+	u64 r10;
+	u64 r9;
+	u64 r8;
+	u64 ax;
+	u64 cx;
+	u64 dx;
+	u64 si;
+	u64 di;
+
+	u64 orig_ax;
+	u64 ip;
+	union {
+		u16 cs;
+		u64 csx;
+		struct fred_cs fred_cs;
+	};
+	u64 flags;
+	u64 sp;
+	union {
+		u16 ss;
+		u64 ssx;
+		struct fred_ss fred_ss;
+	};
+	u64 edata;
+	u64 resv;
+};
+
 union exit_reason {
 	struct {
 		u32	basic			: 16;
@@ -1030,5 +1109,10 @@ void test_override_guest(test_guest_func func);
 void test_add_teardown(test_teardown_func func, void *data);
 void test_skip(const char *msg);
 void test_set_guest_finished(void);
+
+extern void *asm_fred_entrypoint_user;
+typedef void (*fred_handler)(struct fred_stack_frame *fred_stack_frame);
+void fred_set_user_handler(fred_handler handler);
+void fred_set_kernel_handler(fred_handler handler);
 
 #endif

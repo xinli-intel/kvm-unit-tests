@@ -547,7 +547,8 @@ static int test_ctrl_efer_exit_handler(union exit_reason exit_reason)
 	return VMX_TEST_VMEXIT;
 }
 
-u32 guest_cr0, guest_cr4;
+u32 guest_cr0;
+u64 guest_cr4;
 
 static void cr_shadowing_main(void)
 {
@@ -12573,6 +12574,109 @@ static void vmx_entry_fred_test(void)
 	test_set_guest_finished();
 }
 
+static void vmx_fred_cr4_test_kernel_handler(struct fred_stack_frame *fred_stack_frame)
+{
+	report(((read_cr4() & X86_CR4_FRED) == X86_CR4_FRED) &&
+	       fred_stack_frame->fred_ss.type == 3 &&
+	       fred_stack_frame->fred_ss.vector == 13,
+	       "#GP on clearing EFER.LME when FRED enabled");
+	/* Skip the WRMSR instruction that caused the #GP */
+	fred_stack_frame->ip += 2;
+}
+
+static void vmx_fred_cr4_test(void)
+{
+	if (!(ctrl_enter_rev.clr & ENT_LOAD_FRED)) {
+		report_skip("Load FRED state entry control is not available");
+		return;
+	}
+
+	ia32_efer = rdmsr(MSR_EFER);
+	report((ia32_efer & (EFER_LME | EFER_LMA)) == (EFER_LME | EFER_LMA),
+	       "Guest in long mode");
+
+	report((read_cr4() & X86_CR4_FRED) != X86_CR4_FRED, "Guest FRED is disabled");
+	write_cr4(read_cr4() | X86_CR4_FRED);
+	report((read_cr4() & X86_CR4_FRED) == X86_CR4_FRED, "Guest FRED is enabled");
+
+	fred_set_kernel_handler(vmx_fred_cr4_test_kernel_handler);
+
+	wrmsr(MSR_IA32_FRED_CONFIG, (unsigned long)&asm_fred_entrypoint_user);
+
+	wrmsr(MSR_EFER, ia32_efer & ~EFER_LME);
+
+	report((read_cr4() & X86_CR4_FRED) == X86_CR4_FRED, "Guest FRED is enabled");
+	report((rdmsr(MSR_EFER) & (EFER_LME | EFER_LMA)) == (EFER_LME | EFER_LMA),
+	       "Guest in long mode");
+
+	write_cr4(read_cr4() & ~X86_CR4_FRED);
+
+	test_set_guest_finished();
+}
+
+static void vmx_nested_fred_cr4_test_guest(void)
+{
+	ia32_efer = rdmsr(MSR_EFER);
+	report((ia32_efer & (EFER_LME | EFER_LMA)) == (EFER_LME | EFER_LMA),
+	       "Nested guest in long mode");
+
+	report((read_cr4() & X86_CR4_FRED) != X86_CR4_FRED, "Nested guest FRED is disabled");
+	write_cr4(read_cr4() | X86_CR4_FRED);
+	report((read_cr4() & X86_CR4_FRED) == X86_CR4_FRED, "Nested guest FRED is enabled");
+
+	fred_set_kernel_handler(vmx_fred_cr4_test_kernel_handler);
+
+	wrmsr(MSR_IA32_FRED_CONFIG, (unsigned long)&asm_fred_entrypoint_user);
+
+	wrmsr(MSR_EFER, ia32_efer & ~EFER_LME);
+
+	report((read_cr4() & X86_CR4_FRED) == X86_CR4_FRED, "Nested guest FRED is enabled");
+	report((rdmsr(MSR_EFER) & (EFER_LME | EFER_LMA)) == (EFER_LME | EFER_LMA),
+	       "Nested guest in long mode");
+
+	write_cr4(read_cr4() & ~X86_CR4_FRED);
+
+	vmcall();
+}
+
+static void vmx_nested_fred_cr4_test(void)
+{
+	unsigned long guest_fred_config;
+
+	if (!(ctrl_enter_rev.clr & ENT_LOAD_FRED)) {
+		report_skip("Load FRED state entry control is not available");
+		return;
+	}
+
+	report((read_cr4() & X86_CR4_FRED) != X86_CR4_FRED, "Guest FRED is disabled");
+	report((rdmsr(MSR_EFER) & (EFER_LME | EFER_LMA)) == (EFER_LME | EFER_LMA),
+	       "Guest in long mode");
+
+	/* Allow the guest to read FRED MSRs directly */
+	msr_bmp_init();
+
+	vmcs_set_bits(ENT_CONTROLS, ENT_LOAD_FRED);
+	vmcs_set_bits(EXI_CONTROLS, EXI_ACTIVATE_CTRL1);
+	vmcs_set_bits(EXI_CTRL1, EXI_SAVE_FRED | EXI_LOAD_FRED);
+
+	vmcs_write(GUEST_FRED_CONFIG, 0);
+
+	test_set_guest(vmx_nested_fred_cr4_test_guest);
+	enter_guest();
+
+	guest_fred_config = vmcs_read(GUEST_FRED_CONFIG);
+	report(guest_fred_config == (unsigned long)&asm_fred_entrypoint_user,
+	       "VMCS guest FRED config is %lx", guest_fred_config);
+
+	report((read_cr4() & X86_CR4_FRED) != X86_CR4_FRED, "Guest FRED is disabled");
+	report((rdmsr(MSR_EFER) & (EFER_LME | EFER_LMA)) == (EFER_LME | EFER_LMA),
+	       "Guest in long mode");
+
+	write_cr4(read_cr4() & ~X86_CR4_FRED);
+
+	test_set_guest_finished();
+}
+
 #define TEST(name) { #name, .v2 = name }
 
 /* name/init/guest_main/exit_handler/vmfail_handler */
@@ -12697,5 +12801,7 @@ struct vmx_test vmx_tests[] = {
 	TEST(vmx_exit_control_rtit_test),
 	TEST(vmx_exit_control_cet_test),
 	TEST(vmx_entry_fred_test),
+	TEST(vmx_fred_cr4_test),
+	TEST(vmx_nested_fred_cr4_test),
 	{ NULL, NULL, NULL, NULL },
 };
